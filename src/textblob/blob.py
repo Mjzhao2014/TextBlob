@@ -23,7 +23,8 @@ Example usage: ::
 import json
 import sys
 from collections import defaultdict
-
+from functools import lru_cache
+import logging
 import nltk
 
 from textblob.base import (
@@ -44,6 +45,8 @@ from textblob.sentiments import PatternAnalyzer
 from textblob.taggers import NLTKTagger
 from textblob.tokenizers import WordTokenizer, sent_tokenize, word_tokenize
 from textblob.utils import PUNCTUATION_REGEX, lowerstrip
+
+logger = logging.getLogger(__name__)
 
 # Wordnet interface
 # NOTE: textblob.wordnet is not imported so that the wordnet corpus can be lazy-loaded
@@ -327,6 +330,29 @@ def _initialize_models(
     obj.parser = _validated_param(parser, "parser", BaseParser, BaseBlob.parser)
     obj.classifier = classifier
 
+@lru_cache(maxsize=32)
+def load_vocab_file(path):
+    """Load a domain-specific vocabulary file from disk.
+
+    The file format should be one term per line. All terms are
+    lowercased when loaded to enable case-insensitive matching.
+    Results are cached with a LRU cache to avoid redundant
+    disk reads if the same vocabulary path is loaded repeatedly.
+    Any errors in reading the file will be logged and an empty set
+    will be returned.
+    """
+    vocab: set[str] = set()
+    if not path:
+        return vocab
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                term = line.strip()
+                if term:
+                    vocab.add(term.lower())
+    except Exception as exc:
+        logger.error("Failed to load vocabulary file %s: %s", path, exc)
+    return vocab
 
 class BaseBlob(StringlikeMixin, BlobComparableMixin):
     """An abstract base class that all textblob classes will inherit from.
@@ -345,6 +371,7 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
     :param parser: A parser. If ``None``, defaults to
         :class:`PatternParser <textblob.en.parsers.PatternParser>`.
     :param classifier: A classifier.
+    :param custom_vocab_file: (optional) Path to a plain-text file containing domain-specific terms.
 
     .. versionchanged:: 0.6.0
         ``clean_html`` parameter deprecated, as it was in NLTK.
@@ -366,6 +393,7 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         parser=None,
         classifier=None,
         clean_html=False,
+        custom_vocab_file=None,
     ):
         if not isinstance(text, basestring):
             raise TypeError(
@@ -378,6 +406,9 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
                 "To remove HTML markup, use BeautifulSoup's "
                 "get_text() function"
             )
+        self.custom_vocab_file = custom_vocab_file
+        self.vocab_words = load_vocab_file(custom_vocab_file) if custom_vocab_file else set()
+
         self.raw = self.string = text
         self.stripped = lowerstrip(self.raw, all=True)
         _initialize_models(
@@ -543,7 +574,7 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         return grams
 
     def correct(self):
-        """Attempt to correct the spelling of a blob.
+        """Attempt to correct the spelling of a blob, preserving custom vocab words.
 
         .. versionadded:: 0.6.0
 
@@ -551,9 +582,27 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         """
         # regex matches: word or punctuation or whitespace
         tokens = nltk.tokenize.regexp_tokenize(self.raw, r"\w+|[^\w\s]|\s")
-        corrected = (Word(w).correct() for w in tokens)
-        ret = "".join(corrected)
-        return self.__class__(ret)
+        corrected_tokens = []
+        for token in tokens:
+            if token.isspace():
+                corrected_tokens.append(token)
+                continue
+            if self.vocab_words and token.lower() in self.vocab_words:
+                corrected_tokens.append(token)
+            else:
+                corrected_tokens.append(Word(token).correct())
+        ret = "".join(corrected_tokens)
+        
+        return self.__class__(
+            ret,
+            tokenizer=self.tokenizer,
+            pos_tagger=self.pos_tagger,
+            np_extractor=self.np_extractor,
+            analyzer=self.analyzer,
+            parser=self.parser,
+            classifier=self.classifier,
+            custom_vocab_file=self.custom_vocab_file,
+        )
 
     def _cmpkey(self):
         """Key used by ComparableMixin to implement all rich comparison
@@ -607,6 +656,9 @@ class TextBlob(BaseBlob):
     :param analyzer: (optional) A sentiment analyzer. If ``None``, defaults to
         :class:`PatternAnalyzer <textblob.en.sentiments.PatternAnalyzer>`.
     :param classifier: (optional) A classifier.
+    :param custom_vocab_file: (optional) Path to a domain-specific vocabulary
+        file containing one term per line. Terms in this file will be preserved
+        by `correct` operations.
     """  # noqa: E501
 
     @cached_property
@@ -674,6 +726,7 @@ class TextBlob(BaseBlob):
                 analyzer=self.analyzer,
                 parser=self.parser,
                 classifier=self.classifier,
+                custom_vocab_file=self.custom_vocab_file,
             )
             sentence_objects.append(s)
         return sentence_objects
@@ -737,6 +790,8 @@ class Blobber:
     :param parser: A parser. If ``None``, defaults to
         :class:`PatternParser <textblob.en.parsers.PatternParser>`.
     :param classifier: A classifier.
+    :param custom_vocab_file: Optional filesystem path to a vocabulary file
+        of domain-specific terms to preserve during correction.
 
     .. versionadded:: 0.4.0
     """  # noqa: E501
@@ -755,10 +810,13 @@ class Blobber:
         analyzer=None,
         parser=None,
         classifier=None,
+        custom_vocab_file=None,
     ):
         _initialize_models(
             self, tokenizer, pos_tagger, np_extractor, analyzer, parser, classifier
         )
+        # Preserve vocabulary file to pass along to created blobs if provided
+        self.custom_vocab_file = custom_vocab_file
 
     def __call__(self, text):
         """Return a new TextBlob object with this Blobber's ``np_extractor``,
@@ -774,6 +832,7 @@ class Blobber:
             analyzer=self.analyzer,
             parser=self.parser,
             classifier=self.classifier,
+            custom_vocab_file=self.custom_vocab_file,
         )
 
     def __repr__(self):

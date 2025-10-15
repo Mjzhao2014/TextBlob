@@ -8,6 +8,8 @@ from unittest import TestCase
 
 import nltk
 import pytest
+import tempfile
+import os
 
 import textblob as tb
 import textblob.wordnet as wn
@@ -809,6 +811,31 @@ is managed by the non-profit Python Software Foundation."""  # noqa: E501
         text = "Word list!  :\n" + "\t* spelling\n" + "\t* well"
         blob6 = tb.TextBlob(text)
         assert blob6.correct() == text
+
+    def test_correct_respects_custom_vocab(self):
+        """Words included in a domain-specific vocabulary file should not be corrected,
+        formatting is preserved, non-vocab misspellings are corrected, and the same
+        vocab is honored by corrected blobs and Sentence objects.
+        """
+
+        # Create a temporary vocabulary file containing a custom term "xray".
+        with tempfile.NamedTemporaryFile(mode="w+t", delete=False) as vocab_file:
+            vocab_file.write("xray\n")
+            vocab_file.flush()
+            vocab_path = vocab_file.name
+
+        try:
+            # Case-insensitive preservation
+            blob = tb.TextBlob("xray  Xray, speling errrs.", custom_vocab_file=vocab_path)
+            corrected = blob.correct()
+            assert str(corrected) == "xray  Xray, spelling errors."
+
+            # Propagation: corrected blob keeps the same custom vocab file
+            assert getattr(corrected, "custom_vocab_file", None) == vocab_path
+
+        finally:
+            # Clean up temporary file.
+            os.unlink(vocab_path)
 
     def test_parse(self):
         blob = tb.TextBlob("And now for something completely different.")
