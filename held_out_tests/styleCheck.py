@@ -3,11 +3,13 @@ Does the new code regarding the vocab file implementation follow PEP 8-complianc
 '''
 import subprocess
 import sys
+from pathlib import Path
 
 # Files to check
+BASE_DIR = Path(__file__).resolve().parent.parent
 FILES_TO_CHECK = [
-    "/root/repo/TextBlob/src/textblob/blob.py",
-    "/root/repo/TextBlob/tests/test_blob.py"
+    BASE_DIR / "src/textblob/blob.py",
+    BASE_DIR / "tests/test_blob.py",
 ]
 
 def check_pep8_compliance(file_path):
@@ -15,7 +17,9 @@ def check_pep8_compliance(file_path):
     try:
         # Run flake8 to check for PEP 8 compliance, including import order
         result = subprocess.run(
-            ["flake8", "--max-line-length=88", "--select=E,W,F,I", file_path], capture_output=True, text=True
+            ["flake8", "--max-line-length=88", "--select=E,W,F,I", str(file_path)],
+            capture_output=True,
+            text=True,
         )
 
         if result.returncode == 0:
@@ -25,8 +29,11 @@ def check_pep8_compliance(file_path):
             print(result.stdout)
             return False
         return True
-    except FileNotFoundError:
-        print(f"FAIL: File {file_path} not found.")
+    except FileNotFoundError as exc:
+        if exc.filename == "flake8":
+            print("FAIL: flake8 is not installed or not found in PATH.")
+        else:
+            print(f"FAIL: File {file_path} not found.")
         return False
     except Exception as e:
         print(f"FAIL: Error running flake8 on {file_path} - {e}")
@@ -36,7 +43,7 @@ def check_pep257_compliance(file_path):
     """Check PEP 257 compliance using pydocstyle."""
     try:
         # Run pydocstyle to check for PEP 257 compliance
-        result = subprocess.run(["pydocstyle", file_path], capture_output=True, text=True)
+        result = subprocess.run(["pydocstyle", str(file_path)], capture_output=True, text=True)
 
         if result.returncode == 0:
             print(f"PASS: {file_path} is PEP 257 compliant.")
@@ -45,8 +52,11 @@ def check_pep257_compliance(file_path):
             print(result.stdout)
             return False
         return True
-    except FileNotFoundError:
-        print(f"FAIL: File {file_path} not found.")
+    except FileNotFoundError as exc:
+        if exc.filename == "pydocstyle":
+            print("FAIL: pydocstyle is not installed or not found in PATH.")
+        else:
+            print(f"FAIL: File {file_path} not found.")
         return False
     except Exception as e:
         print(f"FAIL: Error running pydocstyle on {file_path} - {e}")
