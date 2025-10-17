@@ -9,6 +9,7 @@ from datetime import datetime
 from unittest import TestCase
 
 import nltk
+
 import pytest
 
 import textblob as tb
