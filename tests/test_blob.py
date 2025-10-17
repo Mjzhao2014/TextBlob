@@ -3,13 +3,13 @@ Tests for the text processor.
 """
 
 import json
+import os
+import tempfile
 from datetime import datetime
 from unittest import TestCase
 
 import nltk
 import pytest
-import tempfile
-import os
 
 import textblob as tb
 import textblob.wordnet as wn
