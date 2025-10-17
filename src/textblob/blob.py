@@ -23,10 +23,11 @@ Example usage::
 """  # noqa: E501
 
 import json
+import logging
 import sys
 from collections import defaultdict
 from functools import lru_cache
-import logging
+
 import nltk
 
 from textblob.base import (
