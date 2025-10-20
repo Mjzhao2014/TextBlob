@@ -366,7 +366,7 @@ def _load_vocab_file_from_disk(path):
 
 @lru_cache(maxsize=32)
 def _load_vocab_file_cached(path):
-    """Cached wrapper around the raw vocabulary loader."""
+    """Cache vocabulary data from the raw loader."""
     return _load_vocab_file_from_disk(path)
 
 
