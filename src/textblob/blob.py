@@ -353,7 +353,23 @@ def _initialize_models(
     obj.classifier = classifier
 
 
+def _load_vocab_file_from_disk(path):
+    """Read vocabulary terms from ``path`` without caching."""
+    vocab: set[str] = set()
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            term = line.strip()
+            if term:
+                vocab.add(term.lower())
+    return vocab
+
+
 @lru_cache(maxsize=32)
+def _load_vocab_file_cached(path):
+    """Cached wrapper around the raw vocabulary loader."""
+    return _load_vocab_file_from_disk(path)
+
+
 def load_vocab_file(path):
     """Load a domain-specific vocabulary file from disk.
 
@@ -362,20 +378,20 @@ def load_vocab_file(path):
     Results are cached with a LRU cache to avoid redundant
     disk reads if the same vocabulary path is loaded repeatedly.
     Any errors in reading the file will be logged and an empty set
-    will be returned.
+    will be returned. Failures are not cached so subsequent calls
+    can retry once the issue is resolved.
     """
-    vocab: set[str] = set()
     if not path:
-        return vocab
+        return set()
     try:
-        with open(path, encoding="utf-8") as handle:
-            for line in handle:
-                term = line.strip()
-                if term:
-                    vocab.add(term.lower())
+        return _load_vocab_file_cached(path)
     except Exception as exc:
         logger.error("Failed to load vocabulary file %s: %s", path, exc)
-    return vocab
+        return set()
+
+
+load_vocab_file.cache_clear = _load_vocab_file_cached.cache_clear
+load_vocab_file.cache_info = _load_vocab_file_cached.cache_info
 
 
 class BaseBlob(StringlikeMixin, BlobComparableMixin):
