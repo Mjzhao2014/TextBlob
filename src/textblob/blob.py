@@ -1,7 +1,9 @@
-"""Wrappers for various units of text, including the main
+"""Wrappers for TextBlob text objects.
+
 :class:`TextBlob <textblob.blob.TextBlob>`, :class:`Word <textblob.blob.Word>`,
 and :class:`WordList <textblob.blob.WordList>` classes.
-Example usage: ::
+
+Example usage::
 
     >>> from textblob import TextBlob
     >>> b = TextBlob("Simple is better than complex.")
@@ -21,8 +23,10 @@ Example usage: ::
 """  # noqa: E501
 
 import json
+import logging
 import sys
 from collections import defaultdict
+from functools import lru_cache
 
 import nltk
 
@@ -45,6 +49,8 @@ from textblob.taggers import NLTKTagger
 from textblob.tokenizers import WordTokenizer, sent_tokenize, word_tokenize
 from textblob.utils import PUNCTUATION_REGEX, lowerstrip
 
+logger = logging.getLogger(__name__)
+
 # Wordnet interface
 # NOTE: textblob.wordnet is not imported so that the wordnet corpus can be lazy-loaded
 _wordnet = nltk.corpus.wordnet
@@ -53,7 +59,7 @@ basestring = (str, bytes)
 
 
 def _penn_to_wordnet(tag):
-    """Converts a Penn corpus tag into a Wordnet tag."""
+    """Convert a Penn corpus tag into a WordNet tag."""
     if tag in ("NN", "NNS", "NNP", "NNPS"):
         return _wordnet.NOUN
     if tag in ("JJ", "JJR", "JJS"):
@@ -66,25 +72,31 @@ def _penn_to_wordnet(tag):
 
 
 class Word(str):
-    """A simple word representation. Includes methods for inflection,
-    and WordNet integration.
+    """Represent a word with inflection helpers and WordNet integration.
+
+    Provides convenience methods for spelling correction, stemming, and
+    lemmatization while maintaining compatibility with string behavior.
     """
 
     def __new__(cls, string, pos_tag=None):
-        """Return a new instance of the class. It is necessary to override
-        this method in order to handle the extra pos_tag argument in the
-        constructor.
+        """Create a new Word instance.
+
+        The constructor accepts an optional ``pos_tag`` that is stored alongside
+        the string representation for downstream processing.
         """
         return super().__new__(cls, string)
 
     def __init__(self, string, pos_tag=None):
+        """Initialize the Word."""
         self.string = string
         self.pos_tag = pos_tag
 
     def __repr__(self):
+        """Return ``repr`` for the underlying string."""
         return repr(self.string)
 
     def __str__(self):
+        """Return the word as a string."""
         return self.string
 
     def singularize(self):
@@ -107,8 +119,10 @@ class Word(str):
         return suggest(self.string)
 
     def correct(self):
-        """Correct the spelling of the word. Returns the word with the highest
-        confidence using the spelling corrector.
+        """Correct the spelling of the word.
+
+        Returns the word with the highest confidence using the spelling
+        corrector.
 
         .. versionadded:: 0.6.0
         """
@@ -145,7 +159,10 @@ class Word(str):
     # added 'stemmer' on lines of lemmatizer
     # based on nltk
     def stem(self, stemmer=PorterStemmer):
-        """Stem a word using various NLTK stemmers. (Default: Porter Stemmer)
+        """Stem a word using various NLTK stemmers.
+
+        The Porter stemmer is used by default, but any stemmer implementing a
+        ``stem`` method can be supplied.
 
         .. versionadded:: 0.12.0
         """
@@ -163,8 +180,9 @@ class Word(str):
 
     @cached_property
     def definitions(self):
-        """The list of definitions for this word. Each definition corresponds
-        to a synset.
+        """Return the list of definitions for this word.
+
+        Each definition corresponds to a synset.
 
         .. versionadded:: 0.7.0
         """
@@ -183,8 +201,9 @@ class Word(str):
         return _wordnet.synsets(self.string, pos)
 
     def define(self, pos=None):
-        """Return a list of definitions for this word. Each definition
-        corresponds to a synset for this word.
+        """Return a list of definitions for this word.
+
+        Each definition corresponds to a synset for this word.
 
         :param pos: A part-of-speech tag to filter upon. If ``None``, definitions
             for all parts of speech will be loaded.
@@ -199,22 +218,23 @@ class WordList(list):
     """A list-like collection of words."""
 
     def __init__(self, collection):
-        """Initialize a WordList. Takes a collection of strings as
-        its only argument.
+        """Initialize the WordList.
+
+        Takes a collection of strings as its only argument.
         """
         super().__init__([Word(w) for w in collection])
 
     def __str__(self):
-        """Returns a string representation for printing."""
+        """Return a string representation for printing."""
         return super().__repr__()
 
     def __repr__(self):
-        """Returns a string representation for debugging."""
+        """Return a string representation for debugging."""
         class_name = self.__class__.__name__
         return f"{class_name}({super().__repr__()})"
 
     def __getitem__(self, key):
-        """Returns a string at the given index."""
+        """Return an item at the given index."""
         item = super().__getitem__(key)
         if isinstance(key, slice):
             return self.__class__(item)
@@ -222,12 +242,13 @@ class WordList(list):
             return item
 
     def __getslice__(self, i, j):
-        # This is included for Python 2.* compatibility
+        """Return a slice of the WordList (Python 2 compatibility)."""
         return self.__class__(super().__getslice__(i, j))
 
     def __setitem__(self, index, obj):
-        """Places object at given index, replacing existing item. If the object
-        is a string, inserts a :class:`Word <Word>` object.
+        """Place object at a given index, replacing any existing item.
+
+        If the object is a string, inserts a :class:`Word <Word>` object.
         """
         if isinstance(obj, basestring):
             super().__setitem__(index, Word(obj))
@@ -245,8 +266,9 @@ class WordList(list):
         return super().count(strg, *args, **kwargs)
 
     def append(self, obj):
-        """Append an object to end. If the object is a string, appends a
-        :class:`Word <Word>` object.
+        """Append an object to the end of the list.
+
+        If the object is a string, appends a :class:`Word <Word>` object.
         """
         if isinstance(obj, basestring):
             super().append(Word(obj))
@@ -254,8 +276,9 @@ class WordList(list):
             super().append(obj)
 
     def extend(self, iterable):
-        """Extend WordList by appending elements from ``iterable``. If an element
-        is a string, appends a :class:`Word <Word>` object.
+        """Extend the WordList by appending elements from ``iterable``.
+
+        If an element is a string, appends a :class:`Word <Word>` object.
         """
         for e in iterable:
             self.append(e)
@@ -286,8 +309,10 @@ class WordList(list):
 
 
 def _validated_param(obj, name, base_class, default, base_class_name=None):
-    """Validates a parameter passed to __init__. Makes sure that obj is
-    the correct class. Return obj if it's not None or falls back to default
+    """Validate a parameter passed to ``__init__``.
+
+    Ensures that ``obj`` is the correct class. Returns ``obj`` if it is
+    provided or falls back to ``default`` otherwise.
 
     :param obj: The object passed in.
     :param name: The name of the parameter.
@@ -303,7 +328,7 @@ def _validated_param(obj, name, base_class, default, base_class_name=None):
 def _initialize_models(
     obj, tokenizer, pos_tagger, np_extractor, analyzer, parser, classifier
 ):
-    """Common initialization between BaseBlob and Blobber classes."""
+    """Initialize models shared between BaseBlob and Blobber."""
     # tokenizer may be a textblob or an NLTK tokenizer
     obj.tokenizer = _validated_param(
         tokenizer,
@@ -328,8 +353,34 @@ def _initialize_models(
     obj.classifier = classifier
 
 
+@lru_cache(maxsize=32)
+def load_vocab_file(path):
+    """Load a domain-specific vocabulary file from disk.
+
+    The file format should be one term per line. All terms are
+    lowercased when loaded to enable case-insensitive matching.
+    Results are cached with a LRU cache to avoid redundant
+    disk reads if the same vocabulary path is loaded repeatedly.
+    Any errors in reading the file will be logged and an empty set
+    will be returned.
+    """
+    vocab: set[str] = set()
+    if not path:
+        return vocab
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                term = line.strip()
+                if term:
+                    vocab.add(term.lower())
+    except Exception as exc:
+        logger.error("Failed to load vocabulary file %s: %s", path, exc)
+    return vocab
+
+
 class BaseBlob(StringlikeMixin, BlobComparableMixin):
-    """An abstract base class that all textblob classes will inherit from.
+    """Base class for TextBlob-derived objects.
+
     Includes words, POS tag, NP, and word count properties. Also includes
     basic dunder and string methods for making objects like Python strings.
 
@@ -345,6 +396,7 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
     :param parser: A parser. If ``None``, defaults to
         :class:`PatternParser <textblob.en.parsers.PatternParser>`.
     :param classifier: A classifier.
+    :param custom_vocab_file: (optional) Path to a plain-text file containing domain-specific terms.
 
     .. versionchanged:: 0.6.0
         ``clean_html`` parameter deprecated, as it was in NLTK.
@@ -366,7 +418,9 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         parser=None,
         classifier=None,
         clean_html=False,
+        custom_vocab_file=None,
     ):
+        """Initialize the BaseBlob."""
         if not isinstance(text, basestring):
             raise TypeError(
                 "The `text` argument passed to `__init__(text)` "
@@ -378,6 +432,11 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
                 "To remove HTML markup, use BeautifulSoup's "
                 "get_text() function"
             )
+        self.custom_vocab_file = custom_vocab_file
+        self.vocab_words = (
+            load_vocab_file(custom_vocab_file) if custom_vocab_file else set()
+        )
+
         self.raw = self.string = text
         self.stripped = lowerstrip(self.raw, all=True)
         _initialize_models(
@@ -386,9 +445,10 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def words(self):
-        """Return a list of word tokens. This excludes punctuation characters.
-        If you want to include punctuation characters, access the ``tokens``
-        property.
+        """Return a list of word tokens.
+
+        This excludes punctuation characters. If you want to include
+        punctuation characters, access the ``tokens`` property.
 
         :returns: A :class:`WordList <WordList>` of word tokens.
         """
@@ -396,8 +456,10 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def tokens(self):
-        """Return a list of tokens, using this blob's tokenizer object
-        (defaults to :class:`WordTokenizer <textblob.tokenizers.WordTokenizer>`).
+        """Return a list of tokens.
+
+        Uses this blob's tokenizer object (defaults to
+        :class:`WordTokenizer <textblob.tokenizers.WordTokenizer>`).
         """
         return WordList(self.tokenizer.tokenize(self.raw))
 
@@ -429,10 +491,11 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def sentiment(self):
-        """Return a tuple of form (polarity, subjectivity ) where polarity
-        is a float within the range [-1.0, 1.0] and subjectivity is a float
-        within the range [0.0, 1.0] where 0.0 is very objective and 1.0 is
-        very subjective.
+        """Return a tuple of form ``(polarity, subjectivity)``.
+
+        The polarity is a float within the range [-1.0, 1.0] and subjectivity is
+        a float within the range [0.0, 1.0] where 0.0 is very objective and 1.0
+        is very subjective.
 
         :rtype: namedtuple of the form ``Sentiment(polarity, subjectivity)``
         """
@@ -440,11 +503,12 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def sentiment_assessments(self):
-        """Return a tuple of form (polarity, subjectivity, assessments ) where
-        polarity is a float within the range [-1.0, 1.0], subjectivity is a
-        float within the range [0.0, 1.0] where 0.0 is very objective and 1.0
-        is very subjective, and assessments is a list of polarity and
-        subjectivity scores for the assessed tokens.
+        """Return a tuple of form ``(polarity, subjectivity, assessments)``.
+
+        The polarity is a float within the range [-1.0, 1.0], subjectivity is a
+        float within the range [0.0, 1.0] where 0.0 is very objective and 1.0 is
+        very subjective, and assessments is a list of polarity and subjectivity
+        scores for the assessed tokens.
 
         :rtype: namedtuple of the form ``Sentiment(polarity, subjectivity,
         assessments)``
@@ -453,7 +517,9 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def polarity(self):
-        """Return the polarity score as a float within the range [-1.0, 1.0]
+        """Return the polarity score.
+
+        The score is a float within the range [-1.0, 1.0].
 
         :rtype: float
         """
@@ -461,8 +527,10 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def subjectivity(self):
-        """Return the subjectivity score as a float within the range [0.0, 1.0]
-        where 0.0 is very objective and 1.0 is very subjective.
+        """Return the subjectivity score.
+
+        The score is a float within the range [0.0, 1.0] where 0.0 is very
+        objective and 1.0 is very subjective.
 
         :rtype: float
         """
@@ -470,7 +538,7 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
     @cached_property
     def noun_phrases(self):
-        """Returns a list of noun phrases for this blob."""
+        """Return a list of noun phrases for this blob."""
         return WordList(
             [
                 phrase.strip().lower()
@@ -530,20 +598,22 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         return counts
 
     def ngrams(self, n=3):
-        """Return a list of n-grams (tuples of n successive words) for this
-        blob.
+        """Return a list of n-grams for this blob.
+
+        Each n-gram is a tuple of ``n`` successive words.
 
         :rtype: List of :class:`WordLists <WordList>`
         """
         if n <= 0:
             return []
         grams = [
-            WordList(self.words[i : i + n]) for i in range(len(self.words) - n + 1)
+            WordList(self.words[i: i + n])
+            for i in range(len(self.words) - n + 1)
         ]
         return grams
 
     def correct(self):
-        """Attempt to correct the spelling of a blob.
+        """Attempt to correct the spelling of a blob, preserving custom vocab words.
 
         .. versionadded:: 0.6.0
 
@@ -551,14 +621,30 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         """
         # regex matches: word or punctuation or whitespace
         tokens = nltk.tokenize.regexp_tokenize(self.raw, r"\w+|[^\w\s]|\s")
-        corrected = (Word(w).correct() for w in tokens)
-        ret = "".join(corrected)
-        return self.__class__(ret)
+        corrected_tokens = []
+        for token in tokens:
+            if token.isspace():
+                corrected_tokens.append(token)
+                continue
+            if self.vocab_words and token.lower() in self.vocab_words:
+                corrected_tokens.append(token)
+            else:
+                corrected_tokens.append(Word(token).correct())
+        ret = "".join(corrected_tokens)
+
+        return self.__class__(
+            ret,
+            tokenizer=self.tokenizer,
+            pos_tagger=self.pos_tagger,
+            np_extractor=self.np_extractor,
+            analyzer=self.analyzer,
+            parser=self.parser,
+            classifier=self.classifier,
+            custom_vocab_file=self.custom_vocab_file,
+        )
 
     def _cmpkey(self):
-        """Key used by ComparableMixin to implement all rich comparison
-        operators.
-        """
+        """Return the key used for ComparableMixin rich comparisons."""
         return self.raw
 
     def _strkey(self):
@@ -566,14 +652,13 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
         return self.raw
 
     def __hash__(self):
+        """Return a hash based on the comparable key."""
         return hash(self._cmpkey())
 
     def __add__(self, other):
-        """Concatenates two text objects the same way Python strings are
-        concatenated.
+        """Concatenate two text objects like Python strings.
 
-        Arguments:
-        - `other`: a string or a text object
+        :param other: A string or another text object.
         """
         if isinstance(other, basestring):
             return self.__class__(self.raw + other)
@@ -585,8 +670,9 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
             )
 
     def split(self, sep=None, maxsplit=sys.maxsize):
-        """Behaves like the built-in str.split() except returns a
-        WordList.
+        """Split the text similarly to ``str.split``.
+
+        Returns a :class:`WordList <WordList>` containing the resulting tokens.
 
         :rtype: :class:`WordList <WordList>`
         """
@@ -594,8 +680,10 @@ class BaseBlob(StringlikeMixin, BlobComparableMixin):
 
 
 class TextBlob(BaseBlob):
-    """A general text block, meant for larger bodies of text (esp. those
-    containing sentences). Inherits from :class:`BaseBlob <BaseBlob>`.
+    """Represent a general text block.
+
+    Intended for larger bodies of text (especially those containing sentences).
+    Inherits from :class:`BaseBlob <BaseBlob>`.
 
     :param str text: A string.
     :param tokenizer: (optional) A tokenizer instance. If ``None``, defaults to
@@ -607,6 +695,9 @@ class TextBlob(BaseBlob):
     :param analyzer: (optional) A sentiment analyzer. If ``None``, defaults to
         :class:`PatternAnalyzer <textblob.en.sentiments.PatternAnalyzer>`.
     :param classifier: (optional) A classifier.
+    :param custom_vocab_file: (optional) Path to a domain-specific vocabulary
+        file containing one term per line. Terms in this file will be preserved
+        by `correct` operations.
     """  # noqa: E501
 
     @cached_property
@@ -616,9 +707,10 @@ class TextBlob(BaseBlob):
 
     @cached_property
     def words(self):
-        """Return a list of word tokens. This excludes punctuation characters.
-        If you want to include punctuation characters, access the ``tokens``
-        property.
+        """Return a list of word tokens.
+
+        This excludes punctuation characters. If you want to include
+        punctuation characters, access the ``tokens`` property.
 
         :returns: A :class:`WordList <WordList>` of word tokens.
         """
@@ -631,12 +723,13 @@ class TextBlob(BaseBlob):
 
     @property
     def serialized(self):
-        """Returns a list of each sentence's dict representation."""
+        """Return each sentence's ``dict`` representation."""
         return [sentence.dict for sentence in self.sentences]
 
     def to_json(self, *args, **kwargs):
-        """Return a json representation (str) of this blob.
-        Takes the same arguments as json.dumps.
+        """Return a JSON string representation of this blob.
+
+        Takes the same arguments as :func:`json.dumps`.
 
         .. versionadded:: 0.5.1
         """
@@ -653,7 +746,7 @@ class TextBlob(BaseBlob):
         return self.to_json()
 
     def _create_sentence_objects(self):
-        """Returns a list of Sentence objects from the raw text."""
+        """Return a list of Sentence objects from the raw text."""
         sentence_objects = []
         sentences = sent_tokenize(self.raw)
         char_index = 0  # Keeps track of character index within the blob
@@ -674,6 +767,7 @@ class TextBlob(BaseBlob):
                 analyzer=self.analyzer,
                 parser=self.parser,
                 classifier=self.classifier,
+                custom_vocab_file=self.custom_vocab_file,
             )
             sentence_objects.append(s)
         return sentence_objects
@@ -691,6 +785,7 @@ class Sentence(BaseBlob):
     """
 
     def __init__(self, sentence, start_index=0, end_index=None, *args, **kwargs):
+        """Initialize the Sentence with positional metadata."""
         super().__init__(sentence, *args, **kwargs)
         #: The start index within a TextBlob
         self.start = self.start_index = start_index
@@ -712,8 +807,10 @@ class Sentence(BaseBlob):
 
 
 class Blobber:
-    """A factory for TextBlobs that all share the same tagger,
-    tokenizer, parser, classifier, and np_extractor.
+    """Factory for TextBlobs that share parsing and tagging resources.
+
+    All produced blobs reuse the same tagger, tokenizer, parser, classifier,
+    and NP extractor.
 
     Usage:
 
@@ -737,6 +834,8 @@ class Blobber:
     :param parser: A parser. If ``None``, defaults to
         :class:`PatternParser <textblob.en.parsers.PatternParser>`.
     :param classifier: A classifier.
+    :param custom_vocab_file: Optional filesystem path to a vocabulary file
+        of domain-specific terms to preserve during correction.
 
     .. versionadded:: 0.4.0
     """  # noqa: E501
@@ -755,14 +854,17 @@ class Blobber:
         analyzer=None,
         parser=None,
         classifier=None,
+        custom_vocab_file=None,
     ):
+        """Initialize the Blobber with shared processing components."""
         _initialize_models(
             self, tokenizer, pos_tagger, np_extractor, analyzer, parser, classifier
         )
+        # Preserve vocabulary file to pass along to created blobs if provided
+        self.custom_vocab_file = custom_vocab_file
 
     def __call__(self, text):
-        """Return a new TextBlob object with this Blobber's ``np_extractor``,
-        ``pos_tagger``, ``tokenizer``, ``analyzer``, and ``classifier``.
+        """Create a TextBlob configured with this Blobber's resources.
 
         :returns: A new :class:`TextBlob <TextBlob>`.
         """
@@ -774,9 +876,11 @@ class Blobber:
             analyzer=self.analyzer,
             parser=self.parser,
             classifier=self.classifier,
+            custom_vocab_file=self.custom_vocab_file,
         )
 
     def __repr__(self):
+        """Return a helpful representation of the Blobber."""
         classifier_name = (
             self.classifier.__class__.__name__ + "()" if self.classifier else "None"
         )

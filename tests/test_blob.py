@@ -3,10 +3,13 @@ Tests for the text processor.
 """
 
 import json
+import os
+import tempfile
 from datetime import datetime
 from unittest import TestCase
 
 import nltk
+
 import pytest
 
 import textblob as tb
@@ -157,10 +160,8 @@ class SentenceTest(TestCase):
         assert repr(self.sentence) == f'Sentence("{self.raw_sentence}")'
 
     def test_stripped_sentence(self):
-        assert (
-            self.sentence.stripped
-            == "any place with frites and belgian beer has my vote"
-        )
+        expected = "any place with frites and belgian beer has my vote"
+        assert self.sentence.stripped == expected
 
     def test_len(self):
         assert len(self.sentence) == len(self.raw_sentence)
@@ -557,19 +558,19 @@ is managed by the non-profit Python Software Foundation."""  # noqa: E501
     def test_using_indices_for_slicing(self):
         blob = tb.TextBlob("Hello world. How do you do?")
         sent1, sent2 = blob.sentences
-        assert blob[sent1.start : sent1.end] == tb.TextBlob(str(sent1))
-        assert blob[sent2.start : sent2.end] == tb.TextBlob(str(sent2))
+        assert blob[sent1.start:sent1.end] == tb.TextBlob(str(sent1))
+        assert blob[sent2.start:sent2.end] == tb.TextBlob(str(sent2))
 
     def test_indices_with_only_one_sentences(self):
         blob = tb.TextBlob("Hello world.")
         sent1 = blob.sentences[0]
-        assert blob[sent1.start : sent1.end] == tb.TextBlob(str(sent1))
+        assert blob[sent1.start:sent1.end] == tb.TextBlob(str(sent1))
 
     def test_indices_with_multiple_puncutations(self):
         blob = tb.TextBlob("Hello world. How do you do?! This has an ellipses...")
         sent1, sent2, sent3 = blob.sentences
-        assert blob[sent2.start : sent2.end] == tb.TextBlob("How do you do?!")
-        assert blob[sent3.start : sent3.end] == tb.TextBlob("This has an ellipses...")
+        assert blob[sent2.start:sent2.end] == tb.TextBlob("How do you do?!")
+        assert blob[sent3.start:sent3.end] == tb.TextBlob("This has an ellipses...")
 
     def test_indices_short_names(self):
         blob = tb.TextBlob(self.text)
@@ -800,15 +801,42 @@ is managed by the non-profit Python Software Foundation."""  # noqa: E501
         # From a user-submitted bug
         text = (
             "Before you embark on any of this journey, write a quick "
-            + "high-level test that demonstrates the slowness. "
-            + "You may need to introduce some minimum set of data to "
-            + "reproduce a significant enough slowness."
+            "high-level test that demonstrates the slowness. "
+            "You may need to introduce some minimum set of data to "
+            "reproduce a significant enough slowness."
         )
         blob5 = tb.TextBlob(text)
         assert blob5.correct() == text
-        text = "Word list!  :\n" + "\t* spelling\n" + "\t* well"
+        text = "Word list!  :\n" "\t* spelling\n" "\t* well"
         blob6 = tb.TextBlob(text)
         assert blob6.correct() == text
+
+    def test_correct_respects_custom_vocab(self):
+        """Words included in a domain-specific vocabulary file should not be corrected,
+        formatting is preserved, non-vocab misspellings are corrected, and the same
+        vocab is honored by corrected blobs and Sentence objects.
+        """
+
+        # Create a temporary vocabulary file containing a custom term "xray".
+        with tempfile.NamedTemporaryFile(mode="w+t", delete=False) as vocab_file:
+            vocab_file.write("xray\n")
+            vocab_file.flush()
+            vocab_path = vocab_file.name
+
+        try:
+            # Case-insensitive preservation
+            blob = tb.TextBlob(
+                "xray  Xray, speling errrs.", custom_vocab_file=vocab_path
+            )
+            corrected = blob.correct()
+            assert str(corrected) == "xray  Xray, spelling errors."
+
+            # Propagation: corrected blob keeps the same custom vocab file
+            assert getattr(corrected, "custom_vocab_file", None) == vocab_path
+
+        finally:
+            # Clean up temporary file.
+            os.unlink(vocab_path)
 
     def test_parse(self):
         blob = tb.TextBlob("And now for something completely different.")
